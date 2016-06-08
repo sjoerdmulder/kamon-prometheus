@@ -1,10 +1,9 @@
+import java.util.Date
 import sbtprotobuf.ProtobufPlugin
 
 val akkaVersion = "2.3.14"
 val sprayVersion = "1.3.3"
 val kamonVersion = "0.5.2"
-
-lazy val protoc = taskKey[Seq[File]]("Runs the protoc compiler")
 
 lazy val commonSettings = Seq(
   homepage := Some(url("https://monsantoco.github.io/kamon-prometheus")),
@@ -29,7 +28,21 @@ lazy val commonSettings = Seq(
 val bintrayPublishing = Seq(
   bintrayOrganization := Some("monsanto"),
   bintrayPackageLabels := Seq("kamon", "prometheus", "metrics"),
-  bintrayVcsUrl := Some("https://github.com/MonsantoCo/kamon-prometheus")
+  bintrayVcsUrl := Some("https://github.com/MonsantoCo/kamon-prometheus"),
+  publishTo := {
+    if (isSnapshot.value) Some("OJO Snapshots" at s"https://oss.jfrog.org/artifactory/oss-snapshot-local;build.timestamp=${new Date().getTime}")
+    else publishTo.value
+  },
+  credentials ++= {
+    List(bintrayCredentialsFile.value)
+      .filter(_.exists())
+      .map(f ⇒ Credentials.toDirect(Credentials(f)))
+      .map(c ⇒ Credentials("Artifactory Realm", "oss.jfrog.org", c.userName, c.passwd))
+  },
+  bintrayReleaseOnPublish := {
+    if (isSnapshot.value) false
+    else bintrayReleaseOnPublish.value
+  }
 )
 
 val noPublishing = Seq(
@@ -76,7 +89,6 @@ lazy val demo = (project in file("demo"))
   .dependsOn(library)
   .enablePlugins(DockerPlugin)
   .settings(commonSettings: _*)
-  .settings(Revolver.settings: _*)
   .settings(aspectjSettings: _*)
   .settings(noPublishing: _*)
   .settings(
@@ -90,7 +102,7 @@ lazy val demo = (project in file("demo"))
     ),
     fork in run := true,
     javaOptions in run <++= AspectjKeys.weaverOptions in Aspectj,
-    javaOptions in Revolver.reStart <++= AspectjKeys.weaverOptions in Aspectj,
+    javaOptions in reStart <++= AspectjKeys.weaverOptions in Aspectj,
     assemblyJarName in assembly <<= (name, version) map { (name, version) ⇒ s"$name-$version.jar" },
     docker <<= docker.dependsOn(assembly),
     imageName in docker := ImageName(
@@ -150,7 +162,9 @@ lazy val demo = (project in file("demo"))
         Expose(Seq(80, 3000, 9090))
       )
       sbtdocker.immutable.Dockerfile(instructions)
-    }
+    },
+    // Don't count demo code in coverage
+    coverageExcludedPackages := "com\\.monsanto\\.arch\\.kamon\\.prometheus\\.demo\\..*"
   )
 
 lazy val ghPagesSettings =
